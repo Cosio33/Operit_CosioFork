@@ -15,7 +15,9 @@ operit_prepare_git_source(
     OPERIT_LLAMA_CPP_BINARY_DIR
     llama_cpp
     "https://github.com/ggml-org/llama.cpp.git"
-    "720d7fa4097f76e5d0eade5a92c1df87c1faf9d9"
+    # v0.8.0 (b11960): first upstream release with LiquidAI LFM3 support
+    # (LFM3-1.7B / LFM3-VL-2B / LFM3-Audio-2B / LFM3-Omni-2B), ggml-org/llama.cpp#31252
+    "8642541b255bfb5dc39cd351a178be09013a55d6"
 )
 
 add_subdirectory("${OPERIT_LLAMA_CPP_SOURCE_DIR}" "${OPERIT_LLAMA_CPP_BINARY_DIR}" EXCLUDE_FROM_ALL)
