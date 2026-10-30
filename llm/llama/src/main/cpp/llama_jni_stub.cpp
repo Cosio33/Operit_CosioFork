@@ -11,7 +11,6 @@
 #if defined(OPERIT_HAS_LLAMA_CPP) && OPERIT_HAS_LLAMA_CPP
 #include "chat.h"
 #include "llama.h"
-#include "nlohmann/json.hpp"
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
@@ -64,7 +63,14 @@ static llama_sampler * createSamplerChain(
     llama_sampler * chain = llama_sampler_chain_init(sparams);
     if (!chain) return nullptr;
 
+    // llama.cpp v0.8.0 needs the vocabulary size to build the penalty sampler.
+    if (vocab == nullptr) {
+        llama_sampler_free(chain);
+        return nullptr;
+    }
+
     llama_sampler_chain_add(chain, llama_sampler_init_penalties(
+            llama_vocab_n_tokens(vocab),
             penaltyLastN,
             repeatPenalty,
             frequencyPenalty,
@@ -76,11 +82,6 @@ static llama_sampler * createSamplerChain(
     llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
 
     if (grammarConfig != nullptr && !grammarConfig->grammar.empty()) {
-        if (vocab == nullptr) {
-            llama_sampler_free(chain);
-            return nullptr;
-        }
-
         llama_sampler * grammarSampler = nullptr;
         if (grammarConfig->lazy) {
             std::vector<const char *> triggerPatternsC;
@@ -1002,10 +1003,13 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyChatTemplate(
 
     try {
         const common_chat_params params = common_chat_templates_apply(session->chatTemplates.get(), inputs);
-        if (params.prompt.empty()) {
+        // llama.cpp v0.8.0 splits the rendered prompt into template and user-input parts,
+        // the plain prompt text is now recovered through common_chat_prompt::str().
+        const std::string promptStr = params.prompt.str();
+        if (promptStr.empty()) {
             return nullptr;
         }
-        return bytesUtf8ToJstring(env, params.prompt);
+        return bytesUtf8ToJstring(env, promptStr);
     } catch (const std::exception & e) {
         LOGE("Failed to apply chat template: %s", e.what());
         return nullptr;
@@ -1039,10 +1043,12 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyStructuredChatTemplate(
     const bool previousHasParser = session->hasToolCallParser;
 
     try {
-        const auto messages = nlohmann::ordered_json::parse(messagesStr);
-        const auto tools = toolsStr.empty()
-            ? nlohmann::ordered_json()
-            : nlohmann::ordered_json::parse(toolsStr);
+        // llama.cpp v0.8.0 replaced nlohmann::ordered_json with its own common_json
+        // wrapper in the chat API, so the OpenAI-compatible payloads are parsed with it.
+        const common_json messages = common_json::parse(messagesStr);
+        const common_json tools = toolsStr.empty()
+            ? common_json()
+            : common_json::parse(toolsStr);
 
         common_chat_templates_inputs inputs;
         inputs.messages = common_chat_msgs_parse_oaicompat(messages);
@@ -1055,16 +1061,18 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyStructuredChatTemplate(
         inputs.use_jinja = true;
 
         const common_chat_params params = common_chat_templates_apply(session->chatTemplates.get(), inputs);
-        if (params.prompt.empty()) {
+        const std::string promptStr = params.prompt.str();
+        if (promptStr.empty()) {
             return nullptr;
         }
 
         session->toolCallGrammar = buildToolCallGrammarConfig(params);
         session->toolCallParserParams = common_chat_parser_params(params);
-        session->toolCallParserParams.parse_tool_calls = true;
         session->hasToolCallParser = !params.parser.empty();
         if (session->hasToolCallParser) {
-            session->toolCallParserParams.parser.load(params.parser);
+            // the PEG arena is already built by the chat template, so it is copied as is;
+            // common_peg_arena::load() no longer exists in llama.cpp v0.8.0.
+            session->toolCallParserParams.parser = params.parser;
         }
 
         if (!rebuildSamplerForSession(session)) {
@@ -1076,7 +1084,7 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyStructuredChatTemplate(
             return nullptr;
         }
 
-        return bytesUtf8ToJstring(env, params.prompt);
+        return bytesUtf8ToJstring(env, promptStr);
     } catch (const std::exception & e) {
         session->toolCallGrammar = previousConfig;
         session->toolCallParserParams = previousParserParams;
@@ -1113,13 +1121,15 @@ Java_com_ai_assistance_llama_LlamaNative_nativeParseToolCallResponse(
     }
 
     try {
-        const common_chat_msg parsed = common_chat_parse(contentStr, false, session->toolCallParserParams);
+        // llama.cpp v0.8.0 parses a common_chat_input instead of a raw string.
+        const common_chat_msg parsed = common_chat_parse(common_chat_input(contentStr), false, session->toolCallParserParams);
         if (parsed.tool_calls.empty()) {
             return nullptr;
         }
 
-        auto normalized = nlohmann::ordered_json::object();
-        normalized["tool_calls"] = parsed.to_json_oaicompat()["tool_calls"];
+        common_json parsedJson = parsed.to_json_oaicompat();
+        common_json normalized = common_json::object();
+        normalized["tool_calls"] = parsedJson["tool_calls"];
         return bytesUtf8ToJstring(env, normalized.dump());
     } catch (const std::exception & e) {
         LOGE("Failed to parse tool-call response: %s", e.what());
