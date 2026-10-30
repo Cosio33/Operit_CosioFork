@@ -4,6 +4,17 @@ project("llama_jni")
 
 include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/operit_git_source.cmake")
 
+# The Android Gradle plugin sets CMAKE_BUILD_TYPE=Debug for the debug and clone
+# variants. CMake's Debug flags are "-g" only, so the inference kernels end up
+# compiled at -O0: ggml_vec_dot_q4_0_q8_0 measures 2592 bytes in that build
+# against 696 bytes with -O2, and the quantized matmul path that runs on every
+# generated token becomes several times slower on device. llama.cpp only
+# defaults to Release when CMAKE_BUILD_TYPE is unset, so the Debug build type is
+# replaced here to keep the native engine optimized in every variant.
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+
 set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
