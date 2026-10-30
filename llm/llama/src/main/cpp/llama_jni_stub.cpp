@@ -633,6 +633,31 @@ static bool tokenToPiece(const llama_vocab * vocab, llama_token token, std::stri
     return true;
 }
 
+// Maximum number of tokens that may be submitted in a single llama_decode()/llama_encode()
+// call for the given context.
+//
+// llama.cpp validates the batch size with unconditional asserts that call GGML_ABORT, i.e.
+// they terminate the whole process instead of returning an error to the caller:
+//   src/llama-context.cpp: GGML_ASSERT(n_tokens_all <= cparams.n_batch);
+//   src/llama-context.cpp: GGML_ASSERT(cparams.n_ubatch >= n_tokens);   // encoder
+// Submitting the whole prompt in one batch therefore killed the app as soon as the prompt
+// grew past the limit (512 tokens with the default n_batch): the conversation history kept
+// pushing the prompt over the limit and the process aborted during the prefill, which is
+// what made the app die after a couple of chats.
+//
+// Taking the smaller of n_batch and n_ubatch keeps every call inside both limits.
+static int32_t chunkLimitForContext(const llama_context * ctx) {
+    uint32_t limit = llama_n_batch(ctx);
+    const uint32_t nUbatch = llama_n_ubatch(ctx);
+    if (nUbatch > 0 && nUbatch < limit) {
+        limit = nUbatch;
+    }
+    if (limit == 0) {
+        limit = 1;
+    }
+    return static_cast<int32_t>(limit);
+}
+
 static void prefillToolCallGenerationPrompt(LlamaSessionNative * session) {
     if (session == nullptr || session->model == nullptr || session->sampler == nullptr) {
         return;
@@ -1228,28 +1253,41 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
         return JNI_FALSE;
     }
 
+    // The prompt is submitted in chunks of at most chunkLimit tokens: llama.cpp aborts the
+    // process when a single decode/encode call carries more tokens than the context allows
+    // (see chunkLimitForContext), and a conversation history easily pushes the prompt past
+    // that limit.
+    const int32_t chunkLimit = chunkLimitForContext(session->ctx);
+    const int32_t nPromptTokens = static_cast<int32_t>(promptTokens.size());
+    const bool hasEncoder = llama_model_has_encoder(session->model);
+
     LOGI(
-        "Prefill decode start: prompt_tokens=%zu n_ctx=%d n_batch=%u max_new=%d",
+        "Prefill decode start: prompt_tokens=%zu n_ctx=%d n_batch=%u n_ubatch=%u chunk_limit=%d chunks=%d encoder=%d max_new=%d",
         promptTokens.size(),
         n_ctx,
         llama_n_batch(session->ctx),
+        llama_n_ubatch(session->ctx),
+        chunkLimit,
+        (nPromptTokens + chunkLimit - 1) / chunkLimit,
+        hasEncoder ? 1 : 0,
         maxNew
     );
 
     int32_t n_past = 0;
 
-    // Evaluate prompt
-    llama_batch batch = llama_batch_get_one(promptTokens.data(), static_cast<int32_t>(promptTokens.size()));
-    // llama_batch_get_one() may leave batch.logits == nullptr (default behavior is: only last token outputs logits)
-    // so never write to it unless it's allocated.
-    if (batch.logits != nullptr && batch.n_tokens > 0) {
-        batch.logits[batch.n_tokens - 1] = 1;
-    }
+    int32_t ret = 0;
 
-    if (llama_model_has_encoder(session->model)) {
-        if (llama_encode(session->ctx, batch) != 0) {
-            LOGE("llama_encode failed");
-            return JNI_FALSE;
+    if (hasEncoder) {
+        // The encoder takes the whole sequence in a single ubatch
+        // (llama-context.cpp: GGML_ASSERT(cparams.n_ubatch >= n_tokens)), so it is fed in
+        // chunks of at most n_ubatch tokens instead of aborting the process.
+        for (int32_t offset = 0; offset < nPromptTokens; offset += chunkLimit) {
+            const int32_t nChunk = std::min(chunkLimit, nPromptTokens - offset);
+            llama_batch encChunk = llama_batch_get_one(promptTokens.data() + offset, nChunk);
+            if (llama_encode(session->ctx, encChunk) != 0) {
+                LOGE("llama_encode failed");
+                return JNI_FALSE;
+            }
         }
 
         llama_token decoder_start_token_id = llama_model_decoder_start_token(session->model);
@@ -1257,13 +1295,42 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
             decoder_start_token_id = llama_vocab_bos(vocab);
         }
 
-        batch = llama_batch_get_one(&decoder_start_token_id, 1);
+        llama_batch batch = llama_batch_get_one(&decoder_start_token_id, 1);
         if (batch.logits != nullptr) {
             batch.logits[0] = 1;
         }
+
+        ret = llama_decode(session->ctx, batch);
+    } else {
+        // Prefill the decoder in chunks. Splitting the prompt is equivalent to a single
+        // batch for causal models: a token only attends to itself and the tokens before it,
+        // and those are already in the KV cache when the chunk containing it is decoded.
+        // The positions stay continuous because llama.cpp continues the auto-generated
+        // positions from the current state of the KV cache (llama-batch.cpp:
+        // llama_batch_compat::init).
+        for (int32_t offset = 0; offset < nPromptTokens; offset += chunkLimit) {
+            const int32_t nChunk = std::min(chunkLimit, nPromptTokens - offset);
+            llama_batch chunk = llama_batch_get_one(promptTokens.data() + offset, nChunk);
+            // llama_batch_get_one() may leave chunk.logits == nullptr (default behavior is:
+            // only the last token of the chunk outputs logits) so never write to it unless
+            // it is allocated.
+            if (chunk.logits != nullptr && chunk.n_tokens > 0) {
+                chunk.logits[chunk.n_tokens - 1] = 1;
+            }
+
+            ret = llama_decode(session->ctx, chunk);
+            if (ret != 0 && ret != 1) {
+                // 1 is a warning; 2 is aborted
+                if (ret == 2) {
+                    LOGI("decode aborted (prompt)");
+                } else {
+                    LOGE("llama_decode failed for prompt ret=%d", ret);
+                }
+                return JNI_FALSE;
+            }
+        }
     }
 
-    int32_t ret = llama_decode(session->ctx, batch);
     if (ret != 0 && ret != 1) {
         // 1 is a warning; 2 is aborted
         if (ret == 2) {
@@ -1275,9 +1342,9 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
     }
 
     // n_past for subsequent single-token decoding
-    n_past = llama_model_has_encoder(session->model)
+    n_past = hasEncoder
         ? 1
-        : static_cast<int32_t>(promptTokens.size());
+        : nPromptTokens;
 
     prefillToolCallGenerationPrompt(session);
 
@@ -1370,7 +1437,7 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
         }
 
         llama_token next = newToken;
-        batch = llama_batch_get_one(&next, 1);
+        llama_batch batch = llama_batch_get_one(&next, 1);
         if (batch.pos != nullptr) {
             batch.pos[0] = n_past;
         }
