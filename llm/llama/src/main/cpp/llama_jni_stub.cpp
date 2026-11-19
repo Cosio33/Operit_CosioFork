@@ -10,10 +10,12 @@
 
 #if defined(OPERIT_HAS_LLAMA_CPP) && OPERIT_HAS_LLAMA_CPP
 #include "chat.h"
+#include "ggml-backend.h"
 #include "llama.h"
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
+#include <dlfcn.h>
 #include <exception>
 #include <memory>
 #include <sstream>
@@ -394,8 +396,37 @@ struct LlamaSessionNative {
 
 static std::once_flag gBackendInitOnce;
 
+// Directory that holds the native libraries packaged in the APK.
+//
+// When the ggml CPU backend is built as a dynamically loaded module, the
+// per-architecture variants are separate shared objects that live next to the
+// other native libraries. ggml's own search path is derived from
+// /proc/self/exe, which on Android points at /system/bin/app_process64 and
+// therefore never contains them, so the path has to be given explicitly.
+static std::string nativeLibraryDir() {
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void *>(&llama_backend_init), &info) == 0 || info.dli_fname == nullptr) {
+        return std::string();
+    }
+    const std::string path(info.dli_fname);
+    const size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) {
+        return std::string();
+    }
+    return path.substr(0, slash);
+}
+
 static void ensureBackendInit() {
     std::call_once(gBackendInitOnce, []() {
+        // Load the dynamically built CPU backend variants before llama.cpp
+        // looks for a CPU device. llama_backend_init() only calls
+        // ggml_backend_load_all() when no backend is registered yet, and that
+        // fallback uses the unusable Android executable path.
+        const std::string dir = nativeLibraryDir();
+        if (!dir.empty()) {
+            ggml_backend_load_all_from_path(dir.c_str());
+            LOGI("ggml_backend_load_all_from_path: %s", dir.c_str());
+        }
         llama_backend_init();
         std::srand(static_cast<unsigned int>(std::time(nullptr)));
         LOGI("llama_backend_init done");
