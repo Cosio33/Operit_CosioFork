@@ -75,18 +75,17 @@ static llama_sampler * createSamplerChain(
         return nullptr;
     }
 
-    llama_sampler_chain_add(chain, llama_sampler_init_penalties(
-            llama_vocab_n_tokens(vocab),
-            penaltyLastN,
-            repeatPenalty,
-            frequencyPenalty,
-            presencePenalty
-    ));
-
-    llama_sampler_chain_add(chain, llama_sampler_init_top_k(topK));
-    llama_sampler_chain_add(chain, llama_sampler_init_top_p(topP, 1));
-    llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
-
+    // The grammar sampler is added FIRST, before the penalties / top-k / top-p /
+    // temperature samplers, mirroring upstream llama.cpp (common/sampling.cpp):
+    //
+    //     llama_sampler_apply(grmr, &cur_p);   // grammar applied to the raw distribution
+    //     llama_sampler_apply(chain, &cur_p);   // then the rest of the chain
+    //
+    // Upstream keeps the grammar outside of the chain and applies it before the
+    // chain, so the grammar-valid tokens are still present when top-k and top-p
+    // cut down the candidate set. With the grammar at the end of the chain the
+    // token that the grammar expects could already have been discarded by top-k,
+    // leaving the grammar without any valid candidate at all.
     if (grammarConfig != nullptr && !grammarConfig->grammar.empty()) {
         llama_sampler * grammarSampler = nullptr;
         if (grammarConfig->lazy) {
@@ -125,6 +124,18 @@ static llama_sampler * createSamplerChain(
             *outGrammarSampler = grammarSampler;
         }
     }
+
+    llama_sampler_chain_add(chain, llama_sampler_init_penalties(
+            llama_vocab_n_tokens(vocab),
+            penaltyLastN,
+            repeatPenalty,
+            frequencyPenalty,
+            presencePenalty
+    ));
+
+    llama_sampler_chain_add(chain, llama_sampler_init_top_k(topK));
+    llama_sampler_chain_add(chain, llama_sampler_init_top_p(topP, 1));
+    llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
 
     llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
 
@@ -1444,8 +1455,24 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
 
         llama_token newToken = 0;
         try {
+            // llama_sampler_sample() already accepts the sampled token into the
+            // sampler chain (src/llama-sampler.cpp: llama_sampler_accept(smpl, token)),
+            // and the chain forwards the accept to every sampler it contains,
+            // including the tool-call grammar sampler.
+            //
+            // Accepting the token a second time here made the lazy tool-call grammar
+            // consume the very same <tool_call> token twice: the first accept fired
+            // the trigger and advanced the grammar, the second one found no valid
+            // continuation and llama_grammar_accept_token() threw
+            //
+            //     "Unexpected empty grammar stack after accepting piece: <tool_call> (id)"
+            //
+            // which ended the generation with 0 output tokens and an empty answer.
+            //
+            // The duplicated accept also fed the penalty sampler twice with the same
+            // token, which doubled the repeat / frequency / presence penalties of the
+            // plain (non tool-call) generation.
             newToken = llama_sampler_sample(session->sampler, session->ctx, -1);
-            llama_sampler_accept(session->sampler, newToken);
         } catch (const std::exception & e) {
             // The grammar sampler throws when the model produces a token that the
             // tool-call grammar does not accept ("Unexpected empty grammar stack").
