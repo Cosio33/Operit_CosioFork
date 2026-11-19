@@ -53,8 +53,12 @@ static llama_sampler * createSamplerChain(
         float frequencyPenalty,
         float presencePenalty,
         uint32_t seed,
-        const ToolCallGrammarConfigNative * grammarConfig
+        const ToolCallGrammarConfigNative * grammarConfig,
+        llama_sampler ** outGrammarSampler = nullptr
 ) {
+    if (outGrammarSampler != nullptr) {
+        *outGrammarSampler = nullptr;
+    }
     if (topP < 0.0f) topP = 0.0f;
     if (topP > 1.0f) topP = 1.0f;
     if (topK < 0) topK = 0;
@@ -117,6 +121,9 @@ static llama_sampler * createSamplerChain(
         }
 
         llama_sampler_chain_add(chain, grammarSampler);
+        if (outGrammarSampler != nullptr) {
+            *outGrammarSampler = grammarSampler;
+        }
     }
 
     llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
@@ -386,6 +393,9 @@ struct LlamaSessionNative {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     llama_sampler * sampler = nullptr;
+    // The grammar sampler is owned by the sampler chain; it is kept here so that the
+    // generation prompt can be fed to the grammar alone, like upstream does.
+    llama_sampler * grammarSampler = nullptr;
     common_chat_templates_ptr chatTemplates;
     SamplingParamsNative samplingParams;
     ToolCallGrammarConfigNative toolCallGrammar;
@@ -457,6 +467,7 @@ static bool rebuildSamplerForSession(LlamaSessionNative * session) {
 
     const llama_vocab * vocab = llama_model_get_vocab(session->model);
 
+    llama_sampler * newGrammarSampler = nullptr;
     llama_sampler * next = createSamplerChain(
         vocab,
         session->samplingParams.temperature,
@@ -467,7 +478,8 @@ static bool rebuildSamplerForSession(LlamaSessionNative * session) {
         session->samplingParams.frequencyPenalty,
         session->samplingParams.presencePenalty,
         session->samplingParams.seed,
-        &session->toolCallGrammar
+        &session->toolCallGrammar,
+        &newGrammarSampler
     );
 
     if (!next) {
@@ -475,11 +487,13 @@ static bool rebuildSamplerForSession(LlamaSessionNative * session) {
     }
 
     if (session->sampler) {
+        // The chain owns the grammar sampler, so freeing the chain releases it too.
         llama_sampler_free(session->sampler);
         session->sampler = nullptr;
     }
 
     session->sampler = next;
+    session->grammarSampler = newGrammarSampler;
     return true;
 }
 
@@ -689,18 +703,55 @@ static int32_t chunkLimitForContext(const llama_context * ctx) {
     return static_cast<int32_t>(limit);
 }
 
+// Feeds the generation prompt to the grammar sampler.
+//
+// Upstream does exactly this, with two conditions that matter (common/sampling.cpp):
+//
+//     if (grmr && !params.grammar_lazy && common_grammar_needs_prefill(params.grammar)) {
+//         for (const auto & token : prefill_tokens) {
+//             llama_sampler_accept(grmr, token);
+//         }
+//     }
+//
+// i.e. only the grammar sampler is advanced, and only when the grammar is not lazy.
+// The previous implementation accepted the generation prompt into the whole sampler
+// chain and always, which broke the tool-call path in two ways:
+//
+//   * a lazy grammar (the tool-call grammar always has trigger patterns) must first
+//     see its trigger in the *generated* text; pre-filling it fired the trigger before
+//     the model produced anything, so the grammar then rejected the model's own
+//     tool-call token;
+//   * the penalty samplers must not see the prompt tokens, they only track the
+//     generated ones.
+//
+// The rejection above is fatal in llama.cpp: llama_grammar_accept_token() throws
+// std::runtime_error("Unexpected empty grammar stack after accepting piece: ...")
+// when the grammar has no valid continuation for the accepted piece.
 static void prefillToolCallGenerationPrompt(LlamaSessionNative * session) {
-    if (session == nullptr || session->model == nullptr || session->sampler == nullptr) {
+    if (session == nullptr || session->model == nullptr) {
         return;
     }
     if (session->toolCallGrammar.grammar.empty() || session->toolCallGrammar.generationPrompt.empty()) {
+        return;
+    }
+    // A lazy grammar waits for its trigger; pre-filling it would fire the trigger
+    // before the model generated anything.
+    if (session->toolCallGrammar.lazy) {
+        return;
+    }
+    if (session->grammarSampler == nullptr) {
         return;
     }
 
     const llama_vocab * vocab = llama_model_get_vocab(session->model);
     auto tokens = tokenizeTextToVector(vocab, session->toolCallGrammar.generationPrompt, false);
     for (const auto token : tokens) {
-        llama_sampler_accept(session->sampler, token);
+        try {
+            llama_sampler_accept(session->grammarSampler, token);
+        } catch (const std::exception & e) {
+            LOGE("Tool-call grammar prefill failed: %s", e.what());
+            break;
+        }
     }
 }
 
@@ -1391,8 +1442,23 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
             break;
         }
 
-        const llama_token newToken = llama_sampler_sample(session->sampler, session->ctx, -1);
-        llama_sampler_accept(session->sampler, newToken);
+        llama_token newToken = 0;
+        try {
+            newToken = llama_sampler_sample(session->sampler, session->ctx, -1);
+            llama_sampler_accept(session->sampler, newToken);
+        } catch (const std::exception & e) {
+            // The grammar sampler throws when the model produces a token that the
+            // tool-call grammar does not accept ("Unexpected empty grammar stack").
+            // The exception used to reach the JNI boundary, where an uncaught C++
+            // exception terminates the process (SIGABRT) and killed the whole app.
+            // The generation is stopped here and the text produced so far, which was
+            // already streamed to the caller, is kept.
+            LOGE("Sampler rejected token %d: %s", i, e.what());
+            break;
+        } catch (...) {
+            LOGE("Sampler rejected token %d: unknown error", i);
+            break;
+        }
 
         if (i == 0) {
             LOGI("first sampled token=%d eog=%d", (int) newToken, (int) llama_vocab_is_eog(vocab, newToken));
