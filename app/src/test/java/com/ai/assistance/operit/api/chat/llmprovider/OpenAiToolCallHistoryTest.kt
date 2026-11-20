@@ -210,7 +210,7 @@ class OpenAiToolCallHistoryTest {
             ),
             placeholder
         )
-        assertFalse(placeholder.contains("用户取消"))
+        assertTrue(placeholder.contains("这不是用户取消"))
         assertEquals(4, messages.length())
     }
 
@@ -339,3 +339,4 @@ class OpenAiToolCallHistoryTest {
         assertTrue("history ends with unanswered calls $pendingCallIds", pendingCallIds.isEmpty())
     }
 }
+
