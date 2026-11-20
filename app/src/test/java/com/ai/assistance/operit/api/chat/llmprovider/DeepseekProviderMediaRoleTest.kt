@@ -232,7 +232,7 @@ class DeepseekProviderMediaRoleTest {
         availableTools: List<ToolPrompt>
     ): JSONObject {
         val provider =
-            OpenAIResponsesProvider(
+            TestableResponsesProvider(
                 responsesApiEndpoint = "https://example.test/v1/responses",
                 apiKeyProvider = SingleApiKeyProvider("test-key"),
                 modelName = "openai-responses-test",
@@ -241,7 +241,7 @@ class DeepseekProviderMediaRoleTest {
                 enableToolCall = true
             )
         val body =
-            provider.createRequestBody(
+            provider.buildRequestBody(
                 context = mock<Context>(),
                 chatHistory = history,
                 modelParameters = emptyList<ModelParameter<*>>(),
@@ -253,6 +253,45 @@ class DeepseekProviderMediaRoleTest {
         val buffer = Buffer()
         body.writeTo(buffer)
         return JSONObject(buffer.readUtf8())
+    }
+
+    /**
+     * `createRequestBody` is `protected` across the provider hierarchy, so a test-only
+     * subclass exposes it instead of widening the production visibility.
+     */
+    private class TestableResponsesProvider(
+        responsesApiEndpoint: String,
+        apiKeyProvider: ApiKeyProvider,
+        modelName: String,
+        client: OkHttpClient,
+        supportsVision: Boolean,
+        enableToolCall: Boolean
+    ) : OpenAIResponsesProvider(
+        responsesApiEndpoint = responsesApiEndpoint,
+        apiKeyProvider = apiKeyProvider,
+        modelName = modelName,
+        client = client,
+        supportsVision = supportsVision,
+        enableToolCall = enableToolCall
+    ) {
+        fun buildRequestBody(
+            context: Context,
+            chatHistory: List<PromptTurn>,
+            modelParameters: List<ModelParameter<*>>,
+            enableThinking: Boolean,
+            stream: Boolean,
+            availableTools: List<ToolPrompt>?,
+            preserveThinkInHistory: Boolean
+        ): RequestBody =
+            createRequestBody(
+                context = context,
+                chatHistory = chatHistory,
+                modelParameters = modelParameters,
+                enableThinking = enableThinking,
+                stream = stream,
+                availableTools = availableTools,
+                preserveThinkInHistory = preserveThinkInHistory
+            )
     }
 
     private companion object {

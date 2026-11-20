@@ -1,12 +1,43 @@
 package com.ai.assistance.operit.api.chat.llmprovider
 
 import com.ai.assistance.operit.data.collects.ApiProviderConfigs
+import com.ai.assistance.operit.data.collects.ModelThinkingConfigDefaults
 import com.ai.assistance.operit.data.model.ApiProviderType
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * xAI exposes `reasoning_effort` for the Grok family. The mapping is driven by the shared
+ * thinking-configuration system (the "xai-grok-reasoning-effort" rule), not by a
+ * provider-specific mapper.
+ */
 class XaiProviderReasoningTest {
+
+    private fun mapping(modelName: String): ThinkingQualityMapping =
+        ThinkingQualityMappingRegistry.resolve(
+            providerTypeId = ApiProviderType.XAI.name,
+            modelName = modelName,
+            thinkingConfigurations = ModelThinkingConfigDefaults.forProvider(ApiProviderType.XAI.name)
+        )
+
+    /** Mirrors what XaiProvider.createRequestBody sends for a seeded config. */
+    private fun requestBody(modelName: String, optionId: String, enableThinking: Boolean): JSONObject {
+        val requestJson = JSONObject().put("model", modelName).put("stream", true)
+        ThinkingConfigurationApplier.apply(
+            requestJson = requestJson,
+            providerTypeId = ApiProviderType.XAI.name,
+            modelName = modelName,
+            apiEndpoint = "https://api.x.ai/v1/chat/completions",
+            thinkingConfigurations = ModelThinkingConfigDefaults.forProvider(ApiProviderType.XAI.name),
+            enableThinking = enableThinking,
+            optionId = optionId,
+        )
+        return requestJson
+    }
+
     @Test
     fun defaultConfigUsesTheOfficialXaiEndpointAndModel() {
         assertEquals(
@@ -28,26 +59,48 @@ class XaiProviderReasoningTest {
 
     @Test
     fun enabledOptionsMapToXaiEfforts() {
+        val mapping = mapping("grok-4.6")
+        assertEquals(ThinkingQualityControl.LEVELS, mapping.control)
         assertEquals(
             listOf("low", "medium", "high", "xhigh"),
-            listOf("low", "medium", "high", "xhigh").map {
-                XaiReasoningMapper.effortForOption(optionId = it)
-            }
+            mapping.options.map { it.id }
         )
+        for (effort in listOf("low", "medium", "high", "xhigh")) {
+            assertEquals(
+                effort,
+                requestBody("grok-4.6", optionId = effort, enableThinking = true)
+                    .getString("reasoning_effort")
+            )
+        }
     }
 
     @Test
     fun mapperPreservesTheSelectedEffort() {
         assertEquals(
             "high",
-            XaiReasoningMapper.effortForOption(optionId = "high")
+            requestBody("grok-4.6", optionId = "high", enableThinking = true)
+                .getString("reasoning_effort")
         )
     }
 
     @Test
     fun reasoningEffortUsesTheGrokFamilyRule() {
-        assertTrue(xaiModelSupportsReasoningEffort("grok-4.6"))
-        assertTrue(xaiModelSupportsReasoningEffort("grok-4.5-latest"))
-        assertTrue(xaiModelSupportsReasoningEffort("grok-3-mini"))
+        for (model in listOf("grok-4.6", "grok-4.5-latest", "grok-3-mini")) {
+            assertEquals(model, ThinkingQualityControl.LEVELS, mapping(model).control)
+        }
+        assertEquals(
+            ThinkingQualityControl.UNSUPPORTED,
+            mapping("gpt-4o").control
+        )
+    }
+
+    @Test
+    fun grokReasoningEffortIsAlwaysPresentBecauseTheRuleIsRequired() {
+        // The xai-grok-reasoning-effort rule is marked as required, so the parameter
+        // reaches the wire even when thinking is turned off.
+        val body = requestBody("grok-4.6", optionId = "medium", enableThinking = false)
+        assertTrue(body.has("reasoning_effort"))
+        assertEquals("medium", body.getString("reasoning_effort"))
+        assertFalse(body.has("thinking"))
     }
 }

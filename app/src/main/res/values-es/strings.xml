@@ -7820,4 +7820,27 @@ Ahora puede usar el modo AutoGLM en la interfaz de conversación.</string>
     <string name="token_stats_trends">Análisis de tendencias</string>
     <string name="token_stats_settings">Configuración de estadísticas</string>
     <string name="token_stats_custom_range_confirm">Aceptar</string>
+    <!-- Monitor de rendimiento (antes solo existian en chino) -->
+    <string name="settings_performance_monitor">Monitor de rendimiento</string>
+    <string name="settings_performance_monitor_subtitle">Uso en tiempo real de CPU, memoria y red de la app, los plugins y las terminales</string>
+    <string name="screen_title_performance_monitor">Monitor de rendimiento</string>
+    <string name="perf_tab_cpu">CPU</string>
+    <string name="perf_tab_memory">Memoria</string>
+    <string name="perf_tab_network">Red</string>
+    <string name="perf_action_pause">Pausar muestreo</string>
+    <string name="perf_action_resume">Reanudar muestreo</string>
+    <string name="perf_kind_app">App</string>
+    <string name="perf_kind_plugin">Plugins</string>
+    <string name="perf_kind_terminal">Terminales</string>
+    <string name="perf_kind_device">Dispositivo</string>
+    <string name="perf_cpu_device">CPU del dispositivo</string>
+    <string name="perf_cpu_cores">%1$d núcleos</string>
+    <string name="perf_memory_device">Memoria del dispositivo</string>
+    <string name="perf_memory_available">%1$s disponible</string>
+    <string name="perf_memory_metric_note">Métricas de memoria: App = PSS, plugins = heap de QuickJS, terminales = RSS del árbol de procesos de la sesión.</string>
+    <string name="perf_network_rx">Recepción</string>
+    <string name="perf_network_tx">Envío</string>
+    <string name="perf_network_note">Los plugins y las terminales comparten el UID de sistema de la app, así que su tráfico se contabiliza en App y no se puede medir por separado.</string>
+    <string name="perf_network_unavailable">Este kernel no ofrece contadores de tráfico; el análisis de red está desactivado.</string>
+    <string name="perf_sampling_hint">Muestreando, espera…</string>
 </resources>
