@@ -10,11 +10,12 @@
 
 #if defined(OPERIT_HAS_LLAMA_CPP) && OPERIT_HAS_LLAMA_CPP
 #include "chat.h"
+#include "ggml-backend.h"
 #include "llama.h"
-#include "nlohmann/json.hpp"
 #include <cstdlib>
 #include <ctime>
 #include <algorithm>
+#include <dlfcn.h>
 #include <exception>
 #include <memory>
 #include <sstream>
@@ -52,8 +53,12 @@ static llama_sampler * createSamplerChain(
         float frequencyPenalty,
         float presencePenalty,
         uint32_t seed,
-        const ToolCallGrammarConfigNative * grammarConfig
+        const ToolCallGrammarConfigNative * grammarConfig,
+        llama_sampler ** outGrammarSampler = nullptr
 ) {
+    if (outGrammarSampler != nullptr) {
+        *outGrammarSampler = nullptr;
+    }
     if (topP < 0.0f) topP = 0.0f;
     if (topP > 1.0f) topP = 1.0f;
     if (topK < 0) topK = 0;
@@ -64,23 +69,24 @@ static llama_sampler * createSamplerChain(
     llama_sampler * chain = llama_sampler_chain_init(sparams);
     if (!chain) return nullptr;
 
-    llama_sampler_chain_add(chain, llama_sampler_init_penalties(
-            penaltyLastN,
-            repeatPenalty,
-            frequencyPenalty,
-            presencePenalty
-    ));
+    // llama.cpp v0.8.0 needs the vocabulary size to build the penalty sampler.
+    if (vocab == nullptr) {
+        llama_sampler_free(chain);
+        return nullptr;
+    }
 
-    llama_sampler_chain_add(chain, llama_sampler_init_top_k(topK));
-    llama_sampler_chain_add(chain, llama_sampler_init_top_p(topP, 1));
-    llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
-
+    // The grammar sampler is added FIRST, before the penalties / top-k / top-p /
+    // temperature samplers, mirroring upstream llama.cpp (common/sampling.cpp):
+    //
+    //     llama_sampler_apply(grmr, &cur_p);   // grammar applied to the raw distribution
+    //     llama_sampler_apply(chain, &cur_p);   // then the rest of the chain
+    //
+    // Upstream keeps the grammar outside of the chain and applies it before the
+    // chain, so the grammar-valid tokens are still present when top-k and top-p
+    // cut down the candidate set. With the grammar at the end of the chain the
+    // token that the grammar expects could already have been discarded by top-k,
+    // leaving the grammar without any valid candidate at all.
     if (grammarConfig != nullptr && !grammarConfig->grammar.empty()) {
-        if (vocab == nullptr) {
-            llama_sampler_free(chain);
-            return nullptr;
-        }
-
         llama_sampler * grammarSampler = nullptr;
         if (grammarConfig->lazy) {
             std::vector<const char *> triggerPatternsC;
@@ -114,7 +120,22 @@ static llama_sampler * createSamplerChain(
         }
 
         llama_sampler_chain_add(chain, grammarSampler);
+        if (outGrammarSampler != nullptr) {
+            *outGrammarSampler = grammarSampler;
+        }
     }
+
+    llama_sampler_chain_add(chain, llama_sampler_init_penalties(
+            llama_vocab_n_tokens(vocab),
+            penaltyLastN,
+            repeatPenalty,
+            frequencyPenalty,
+            presencePenalty
+    ));
+
+    llama_sampler_chain_add(chain, llama_sampler_init_top_k(topK));
+    llama_sampler_chain_add(chain, llama_sampler_init_top_p(topP, 1));
+    llama_sampler_chain_add(chain, llama_sampler_init_temp(temperature));
 
     llama_sampler_chain_add(chain, llama_sampler_init_dist(seed));
 
@@ -383,6 +404,9 @@ struct LlamaSessionNative {
     llama_model * model = nullptr;
     llama_context * ctx = nullptr;
     llama_sampler * sampler = nullptr;
+    // The grammar sampler is owned by the sampler chain; it is kept here so that the
+    // generation prompt can be fed to the grammar alone, like upstream does.
+    llama_sampler * grammarSampler = nullptr;
     common_chat_templates_ptr chatTemplates;
     SamplingParamsNative samplingParams;
     ToolCallGrammarConfigNative toolCallGrammar;
@@ -393,8 +417,37 @@ struct LlamaSessionNative {
 
 static std::once_flag gBackendInitOnce;
 
+// Directory that holds the native libraries packaged in the APK.
+//
+// When the ggml CPU backend is built as a dynamically loaded module, the
+// per-architecture variants are separate shared objects that live next to the
+// other native libraries. ggml's own search path is derived from
+// /proc/self/exe, which on Android points at /system/bin/app_process64 and
+// therefore never contains them, so the path has to be given explicitly.
+static std::string nativeLibraryDir() {
+    Dl_info info;
+    if (dladdr(reinterpret_cast<void *>(&llama_backend_init), &info) == 0 || info.dli_fname == nullptr) {
+        return std::string();
+    }
+    const std::string path(info.dli_fname);
+    const size_t slash = path.find_last_of('/');
+    if (slash == std::string::npos) {
+        return std::string();
+    }
+    return path.substr(0, slash);
+}
+
 static void ensureBackendInit() {
     std::call_once(gBackendInitOnce, []() {
+        // Load the dynamically built CPU backend variants before llama.cpp
+        // looks for a CPU device. llama_backend_init() only calls
+        // ggml_backend_load_all() when no backend is registered yet, and that
+        // fallback uses the unusable Android executable path.
+        const std::string dir = nativeLibraryDir();
+        if (!dir.empty()) {
+            ggml_backend_load_all_from_path(dir.c_str());
+            LOGI("ggml_backend_load_all_from_path: %s", dir.c_str());
+        }
         llama_backend_init();
         std::srand(static_cast<unsigned int>(std::time(nullptr)));
         LOGI("llama_backend_init done");
@@ -425,6 +478,7 @@ static bool rebuildSamplerForSession(LlamaSessionNative * session) {
 
     const llama_vocab * vocab = llama_model_get_vocab(session->model);
 
+    llama_sampler * newGrammarSampler = nullptr;
     llama_sampler * next = createSamplerChain(
         vocab,
         session->samplingParams.temperature,
@@ -435,7 +489,8 @@ static bool rebuildSamplerForSession(LlamaSessionNative * session) {
         session->samplingParams.frequencyPenalty,
         session->samplingParams.presencePenalty,
         session->samplingParams.seed,
-        &session->toolCallGrammar
+        &session->toolCallGrammar,
+        &newGrammarSampler
     );
 
     if (!next) {
@@ -443,11 +498,13 @@ static bool rebuildSamplerForSession(LlamaSessionNative * session) {
     }
 
     if (session->sampler) {
+        // The chain owns the grammar sampler, so freeing the chain releases it too.
         llama_sampler_free(session->sampler);
         session->sampler = nullptr;
     }
 
     session->sampler = next;
+    session->grammarSampler = newGrammarSampler;
     return true;
 }
 
@@ -632,18 +689,80 @@ static bool tokenToPiece(const llama_vocab * vocab, llama_token token, std::stri
     return true;
 }
 
+// Maximum number of tokens that may be submitted in a single llama_decode()/llama_encode()
+// call for the given context.
+//
+// llama.cpp validates the batch size with unconditional asserts that call GGML_ABORT, i.e.
+// they terminate the whole process instead of returning an error to the caller:
+//   src/llama-context.cpp: GGML_ASSERT(n_tokens_all <= cparams.n_batch);
+//   src/llama-context.cpp: GGML_ASSERT(cparams.n_ubatch >= n_tokens);   // encoder
+// Submitting the whole prompt in one batch therefore killed the app as soon as the prompt
+// grew past the limit (512 tokens with the default n_batch): the conversation history kept
+// pushing the prompt over the limit and the process aborted during the prefill, which is
+// what made the app die after a couple of chats.
+//
+// Taking the smaller of n_batch and n_ubatch keeps every call inside both limits.
+static int32_t chunkLimitForContext(const llama_context * ctx) {
+    uint32_t limit = llama_n_batch(ctx);
+    const uint32_t nUbatch = llama_n_ubatch(ctx);
+    if (nUbatch > 0 && nUbatch < limit) {
+        limit = nUbatch;
+    }
+    if (limit == 0) {
+        limit = 1;
+    }
+    return static_cast<int32_t>(limit);
+}
+
+// Feeds the generation prompt to the grammar sampler.
+//
+// Upstream does exactly this, with two conditions that matter (common/sampling.cpp):
+//
+//     if (grmr && !params.grammar_lazy && common_grammar_needs_prefill(params.grammar)) {
+//         for (const auto & token : prefill_tokens) {
+//             llama_sampler_accept(grmr, token);
+//         }
+//     }
+//
+// i.e. only the grammar sampler is advanced, and only when the grammar is not lazy.
+// The previous implementation accepted the generation prompt into the whole sampler
+// chain and always, which broke the tool-call path in two ways:
+//
+//   * a lazy grammar (the tool-call grammar always has trigger patterns) must first
+//     see its trigger in the *generated* text; pre-filling it fired the trigger before
+//     the model produced anything, so the grammar then rejected the model's own
+//     tool-call token;
+//   * the penalty samplers must not see the prompt tokens, they only track the
+//     generated ones.
+//
+// The rejection above is fatal in llama.cpp: llama_grammar_accept_token() throws
+// std::runtime_error("Unexpected empty grammar stack after accepting piece: ...")
+// when the grammar has no valid continuation for the accepted piece.
 static void prefillToolCallGenerationPrompt(LlamaSessionNative * session) {
-    if (session == nullptr || session->model == nullptr || session->sampler == nullptr) {
+    if (session == nullptr || session->model == nullptr) {
         return;
     }
     if (session->toolCallGrammar.grammar.empty() || session->toolCallGrammar.generationPrompt.empty()) {
+        return;
+    }
+    // A lazy grammar waits for its trigger; pre-filling it would fire the trigger
+    // before the model generated anything.
+    if (session->toolCallGrammar.lazy) {
+        return;
+    }
+    if (session->grammarSampler == nullptr) {
         return;
     }
 
     const llama_vocab * vocab = llama_model_get_vocab(session->model);
     auto tokens = tokenizeTextToVector(vocab, session->toolCallGrammar.generationPrompt, false);
     for (const auto token : tokens) {
-        llama_sampler_accept(session->sampler, token);
+        try {
+            llama_sampler_accept(session->grammarSampler, token);
+        } catch (const std::exception & e) {
+            LOGE("Tool-call grammar prefill failed: %s", e.what());
+            break;
+        }
     }
 }
 
@@ -1002,10 +1121,13 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyChatTemplate(
 
     try {
         const common_chat_params params = common_chat_templates_apply(session->chatTemplates.get(), inputs);
-        if (params.prompt.empty()) {
+        // llama.cpp v0.8.0 splits the rendered prompt into template and user-input parts,
+        // the plain prompt text is now recovered through common_chat_prompt::str().
+        const std::string promptStr = params.prompt.str();
+        if (promptStr.empty()) {
             return nullptr;
         }
-        return bytesUtf8ToJstring(env, params.prompt);
+        return bytesUtf8ToJstring(env, promptStr);
     } catch (const std::exception & e) {
         LOGE("Failed to apply chat template: %s", e.what());
         return nullptr;
@@ -1039,10 +1161,12 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyStructuredChatTemplate(
     const bool previousHasParser = session->hasToolCallParser;
 
     try {
-        const auto messages = nlohmann::ordered_json::parse(messagesStr);
-        const auto tools = toolsStr.empty()
-            ? nlohmann::ordered_json()
-            : nlohmann::ordered_json::parse(toolsStr);
+        // llama.cpp v0.8.0 replaced nlohmann::ordered_json with its own common_json
+        // wrapper in the chat API, so the OpenAI-compatible payloads are parsed with it.
+        const common_json messages = common_json::parse(messagesStr);
+        const common_json tools = toolsStr.empty()
+            ? common_json()
+            : common_json::parse(toolsStr);
 
         common_chat_templates_inputs inputs;
         inputs.messages = common_chat_msgs_parse_oaicompat(messages);
@@ -1055,16 +1179,18 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyStructuredChatTemplate(
         inputs.use_jinja = true;
 
         const common_chat_params params = common_chat_templates_apply(session->chatTemplates.get(), inputs);
-        if (params.prompt.empty()) {
+        const std::string promptStr = params.prompt.str();
+        if (promptStr.empty()) {
             return nullptr;
         }
 
         session->toolCallGrammar = buildToolCallGrammarConfig(params);
         session->toolCallParserParams = common_chat_parser_params(params);
-        session->toolCallParserParams.parse_tool_calls = true;
         session->hasToolCallParser = !params.parser.empty();
         if (session->hasToolCallParser) {
-            session->toolCallParserParams.parser.load(params.parser);
+            // the PEG arena is already built by the chat template, so it is copied as is;
+            // common_peg_arena::load() no longer exists in llama.cpp v0.8.0.
+            session->toolCallParserParams.parser = params.parser;
         }
 
         if (!rebuildSamplerForSession(session)) {
@@ -1076,7 +1202,7 @@ Java_com_ai_assistance_llama_LlamaNative_nativeApplyStructuredChatTemplate(
             return nullptr;
         }
 
-        return bytesUtf8ToJstring(env, params.prompt);
+        return bytesUtf8ToJstring(env, promptStr);
     } catch (const std::exception & e) {
         session->toolCallGrammar = previousConfig;
         session->toolCallParserParams = previousParserParams;
@@ -1113,13 +1239,15 @@ Java_com_ai_assistance_llama_LlamaNative_nativeParseToolCallResponse(
     }
 
     try {
-        const common_chat_msg parsed = common_chat_parse(contentStr, false, session->toolCallParserParams);
+        // llama.cpp v0.8.0 parses a common_chat_input instead of a raw string.
+        const common_chat_msg parsed = common_chat_parse(common_chat_input(contentStr), false, session->toolCallParserParams);
         if (parsed.tool_calls.empty()) {
             return nullptr;
         }
 
-        auto normalized = nlohmann::ordered_json::object();
-        normalized["tool_calls"] = parsed.to_json_oaicompat()["tool_calls"];
+        common_json parsedJson = parsed.to_json_oaicompat();
+        common_json normalized = common_json::object();
+        normalized["tool_calls"] = parsedJson["tool_calls"];
         return bytesUtf8ToJstring(env, normalized.dump());
     } catch (const std::exception & e) {
         LOGE("Failed to parse tool-call response: %s", e.what());
@@ -1218,28 +1346,41 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
         return JNI_FALSE;
     }
 
+    // The prompt is submitted in chunks of at most chunkLimit tokens: llama.cpp aborts the
+    // process when a single decode/encode call carries more tokens than the context allows
+    // (see chunkLimitForContext), and a conversation history easily pushes the prompt past
+    // that limit.
+    const int32_t chunkLimit = chunkLimitForContext(session->ctx);
+    const int32_t nPromptTokens = static_cast<int32_t>(promptTokens.size());
+    const bool hasEncoder = llama_model_has_encoder(session->model);
+
     LOGI(
-        "Prefill decode start: prompt_tokens=%zu n_ctx=%d n_batch=%u max_new=%d",
+        "Prefill decode start: prompt_tokens=%zu n_ctx=%d n_batch=%u n_ubatch=%u chunk_limit=%d chunks=%d encoder=%d max_new=%d",
         promptTokens.size(),
         n_ctx,
         llama_n_batch(session->ctx),
+        llama_n_ubatch(session->ctx),
+        chunkLimit,
+        (nPromptTokens + chunkLimit - 1) / chunkLimit,
+        hasEncoder ? 1 : 0,
         maxNew
     );
 
     int32_t n_past = 0;
 
-    // Evaluate prompt
-    llama_batch batch = llama_batch_get_one(promptTokens.data(), static_cast<int32_t>(promptTokens.size()));
-    // llama_batch_get_one() may leave batch.logits == nullptr (default behavior is: only last token outputs logits)
-    // so never write to it unless it's allocated.
-    if (batch.logits != nullptr && batch.n_tokens > 0) {
-        batch.logits[batch.n_tokens - 1] = 1;
-    }
+    int32_t ret = 0;
 
-    if (llama_model_has_encoder(session->model)) {
-        if (llama_encode(session->ctx, batch) != 0) {
-            LOGE("llama_encode failed");
-            return JNI_FALSE;
+    if (hasEncoder) {
+        // The encoder takes the whole sequence in a single ubatch
+        // (llama-context.cpp: GGML_ASSERT(cparams.n_ubatch >= n_tokens)), so it is fed in
+        // chunks of at most n_ubatch tokens instead of aborting the process.
+        for (int32_t offset = 0; offset < nPromptTokens; offset += chunkLimit) {
+            const int32_t nChunk = std::min(chunkLimit, nPromptTokens - offset);
+            llama_batch encChunk = llama_batch_get_one(promptTokens.data() + offset, nChunk);
+            if (llama_encode(session->ctx, encChunk) != 0) {
+                LOGE("llama_encode failed");
+                return JNI_FALSE;
+            }
         }
 
         llama_token decoder_start_token_id = llama_model_decoder_start_token(session->model);
@@ -1247,13 +1388,42 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
             decoder_start_token_id = llama_vocab_bos(vocab);
         }
 
-        batch = llama_batch_get_one(&decoder_start_token_id, 1);
+        llama_batch batch = llama_batch_get_one(&decoder_start_token_id, 1);
         if (batch.logits != nullptr) {
             batch.logits[0] = 1;
         }
+
+        ret = llama_decode(session->ctx, batch);
+    } else {
+        // Prefill the decoder in chunks. Splitting the prompt is equivalent to a single
+        // batch for causal models: a token only attends to itself and the tokens before it,
+        // and those are already in the KV cache when the chunk containing it is decoded.
+        // The positions stay continuous because llama.cpp continues the auto-generated
+        // positions from the current state of the KV cache (llama-batch.cpp:
+        // llama_batch_compat::init).
+        for (int32_t offset = 0; offset < nPromptTokens; offset += chunkLimit) {
+            const int32_t nChunk = std::min(chunkLimit, nPromptTokens - offset);
+            llama_batch chunk = llama_batch_get_one(promptTokens.data() + offset, nChunk);
+            // llama_batch_get_one() may leave chunk.logits == nullptr (default behavior is:
+            // only the last token of the chunk outputs logits) so never write to it unless
+            // it is allocated.
+            if (chunk.logits != nullptr && chunk.n_tokens > 0) {
+                chunk.logits[chunk.n_tokens - 1] = 1;
+            }
+
+            ret = llama_decode(session->ctx, chunk);
+            if (ret != 0 && ret != 1) {
+                // 1 is a warning; 2 is aborted
+                if (ret == 2) {
+                    LOGI("decode aborted (prompt)");
+                } else {
+                    LOGE("llama_decode failed for prompt ret=%d", ret);
+                }
+                return JNI_FALSE;
+            }
+        }
     }
 
-    int32_t ret = llama_decode(session->ctx, batch);
     if (ret != 0 && ret != 1) {
         // 1 is a warning; 2 is aborted
         if (ret == 2) {
@@ -1265,9 +1435,9 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
     }
 
     // n_past for subsequent single-token decoding
-    n_past = llama_model_has_encoder(session->model)
+    n_past = hasEncoder
         ? 1
-        : static_cast<int32_t>(promptTokens.size());
+        : nPromptTokens;
 
     prefillToolCallGenerationPrompt(session);
 
@@ -1283,8 +1453,39 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
             break;
         }
 
-        const llama_token newToken = llama_sampler_sample(session->sampler, session->ctx, -1);
-        llama_sampler_accept(session->sampler, newToken);
+        llama_token newToken = 0;
+        try {
+            // llama_sampler_sample() already accepts the sampled token into the
+            // sampler chain (src/llama-sampler.cpp: llama_sampler_accept(smpl, token)),
+            // and the chain forwards the accept to every sampler it contains,
+            // including the tool-call grammar sampler.
+            //
+            // Accepting the token a second time here made the lazy tool-call grammar
+            // consume the very same <tool_call> token twice: the first accept fired
+            // the trigger and advanced the grammar, the second one found no valid
+            // continuation and llama_grammar_accept_token() threw
+            //
+            //     "Unexpected empty grammar stack after accepting piece: <tool_call> (id)"
+            //
+            // which ended the generation with 0 output tokens and an empty answer.
+            //
+            // The duplicated accept also fed the penalty sampler twice with the same
+            // token, which doubled the repeat / frequency / presence penalties of the
+            // plain (non tool-call) generation.
+            newToken = llama_sampler_sample(session->sampler, session->ctx, -1);
+        } catch (const std::exception & e) {
+            // The grammar sampler throws when the model produces a token that the
+            // tool-call grammar does not accept ("Unexpected empty grammar stack").
+            // The exception used to reach the JNI boundary, where an uncaught C++
+            // exception terminates the process (SIGABRT) and killed the whole app.
+            // The generation is stopped here and the text produced so far, which was
+            // already streamed to the caller, is kept.
+            LOGE("Sampler rejected token %d: %s", i, e.what());
+            break;
+        } catch (...) {
+            LOGE("Sampler rejected token %d: unknown error", i);
+            break;
+        }
 
         if (i == 0) {
             LOGI("first sampled token=%d eog=%d", (int) newToken, (int) llama_vocab_is_eog(vocab, newToken));
@@ -1360,7 +1561,7 @@ Java_com_ai_assistance_llama_LlamaNative_nativeGenerateStream(JNIEnv * env, jcla
         }
 
         llama_token next = newToken;
-        batch = llama_batch_get_one(&next, 1);
+        llama_batch batch = llama_batch_get_one(&next, 1);
         if (batch.pos != nullptr) {
             batch.pos[0] = n_past;
         }
