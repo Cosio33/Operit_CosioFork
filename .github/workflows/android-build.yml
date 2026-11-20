@@ -200,6 +200,31 @@ jobs:
           set -euo pipefail
           echo "sdk.dir=$ANDROID_HOME" > local.properties
 
+      - name: Prepare stable signing keystore
+        shell: bash
+        env:
+          OPERIT_KEYSTORE_BASE64: ${{ secrets.OPERIT_KEYSTORE_BASE64 }}
+          OPERIT_KEYSTORE_PASSWORD: ${{ secrets.OPERIT_KEYSTORE_PASSWORD }}
+          OPERIT_KEY_ALIAS: ${{ secrets.OPERIT_KEY_ALIAS }}
+          OPERIT_KEY_PASSWORD: ${{ secrets.OPERIT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPERIT_KEYSTORE_BASE64:-}" ]; then
+            echo "::notice::No hay secret OPERIT_KEYSTORE_BASE64: el APK se firmara con la clave efimera de AGP (habra que desinstalar para actualizar)"
+            exit 0
+          fi
+          KEYSTORE_DIR="$HOME/.operit-signing"
+          mkdir -p "$KEYSTORE_DIR"
+          printf '%s' "$OPERIT_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_DIR/operit-release.jks"
+          test -s "$KEYSTORE_DIR/operit-release.jks"
+          {
+            echo "RELEASE_STORE_FILE=$KEYSTORE_DIR/operit-release.jks"
+            echo "RELEASE_STORE_PASSWORD=$OPERIT_KEYSTORE_PASSWORD"
+            echo "RELEASE_KEY_ALIAS=$OPERIT_KEY_ALIAS"
+            echo "RELEASE_KEY_PASSWORD=$OPERIT_KEY_PASSWORD"
+          } >> local.properties
+          echo "Keystore estable preparado en $KEYSTORE_DIR/operit-release.jks"
+
       - name: Run Gradle build
         env:
           DISPATCH_GRADLE_TASK: ${{ inputs.gradle_task }}
@@ -214,6 +239,17 @@ jobs:
           esac
           chmod +x ./gradlew
           ./gradlew "$gradle_task" --stacktrace --no-daemon
+
+      - name: Report APK signer
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for apk in app/build/outputs/apk/**/*.apk; do
+            echo "APK: $apk"
+            "$ANDROID_HOME"/build-tools/35.0.0/apksigner verify --print-certs "$apk" | grep -E 'SHA-256 digest' || true
+          done
 
       - name: Upload Android reports
         if: always()

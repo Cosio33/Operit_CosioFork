@@ -397,7 +397,7 @@ android {
         applicationId = "com.ai.assistance.operit"
         minSdk = 26
         targetSdk = 34
-        versionCode = 53
+        versionCode = 54
         versionName = "1.12.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -434,7 +434,11 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
-            signingConfig = signingConfigs.getByName("debug")
+            // Si hay un keystore estable disponible (secret de CI o local.properties),
+            // se usa tambien en debug: asi todos los APKs comparten clave y las
+            // actualizaciones se instalan ENCIMA sin obligar a desinstalar.
+            // Sin keystore se cae al keystore debug efimero que genera AGP.
+            signingConfig = releaseSigningConfig ?: signingConfigs.getByName("debug")
             resValue("string", "app_name", "Operit Debug")
         }
         create("clone") {
@@ -457,7 +461,7 @@ android {
                 signingConfig = releaseSigningConfig
             }
             matchingFallbacks += listOf("release")
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = releaseSigningConfig ?: signingConfigs.getByName("debug")
         }
     }
     applicationVariants.all {
