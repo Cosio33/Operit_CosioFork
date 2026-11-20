@@ -233,6 +233,8 @@ chmod +x ./gradlew
 app/build/outputs/apk/debug/app-debug.apk
 app/build/outputs/apk/clone/app-clone.apk
 
+> **关于本地推理引擎的编译优化：** `llm/llama` 模块中的 llama.cpp 原生代码在所有构建变体（debug / clone / nightly / release）中都会以 `CMAKE_BUILD_TYPE=Release` 编译。Android Gradle 插件会把 debug 变体的 `CMAKE_BUILD_TYPE` 设为 `Debug`，而 CMake 的 Debug 编译参数只有 `-g`，会让推理内核以 `-O0` 生成：实测 `ggml_vec_dot_q4_0_q8_0` 的体积从 696 字节膨胀到 2592 字节，每个生成 token 都要走的量化矩阵乘法因此慢上数倍。`llm/llama/CMakeLists.txt` 会强制把 `Debug` 替换为 `Release`，所以 debug APK 也能获得与 release 相同的推理速度。
+
 ## **7. 常见问题排查**
 
 | 错误信息 | 解决方案 |
