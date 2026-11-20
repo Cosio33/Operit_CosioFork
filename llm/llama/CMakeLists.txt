@@ -44,6 +44,36 @@ set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
 set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
 set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
 
+# Weight repacking is disabled on purpose.
+#
+# GGML_CPU_REPACK is ON by default in ggml (ggml/CMakeLists.txt) and it makes the
+# CPU backend re-order the quantized weights at load time into the "8x4" layout
+# consumed by the llamafile-style kernels (ggml_gemv_q4_K_8x4_q8_K and friends).
+# Those kernels are only reachable through the repack buffer type, and upstream
+# does not support that path together with the multi-variant CPU backend:
+# ggml-org/llama.cpp#30583 reproduces a crash on arm64 and reports that the
+# model only loads with --no-repack or without CPU_ALL_VARIANTS.
+#
+# On this device (CUBOT KINGKONG 9 EEA / Helio G99) the crash shows up as a
+# SIGSEGV inside the dot-product variant libggml-cpu-android_armv8.2_2.so:
+#
+#   #00 ggml_gemv_q4_K_8x4_q8_K
+#   #01 ggml::cpu::repack::tensor_traits<block_q4_K, 4, 8, (ggml_type)15>::forward_mul_mat_one_chunk
+#   #02 ggml::cpu::repack::tensor_traits<block_q4_K, 4, 8, (ggml_type)15>::forward_mul_mat
+#   #03 ggml::cpu::repack::tensor_traits<block_q4_K, 4, 8, (ggml_type)15>::compute_forward
+#   #04 ggml_cpu_extra_compute_forward
+#   ...
+#   #07 libomp.so (__kmp_invoke_microtask)
+#
+# i.e. the repack kernel reads past the end of the re-ordered weight buffer.
+# The same happens with the Q6_K kernel (ggml_gemm_q6_K_8x4_q8_K).
+#
+# Turning the repack off does not cost the dot-product kernels: the regular
+# quantized matmul path in ggml/src/ggml-cpu/arch/arm/quants.c is gated by
+# __ARM_FEATURE_DOTPROD on its own, so the armv8.2 variant still uses sdot.
+set(GGML_CPU_REPACK OFF CACHE BOOL "" FORCE)
+
+
 # 16KB page size support (Android 15+ requirement). With BUILD_SHARED_LIBS the
 # engine is no longer a single object file, so every shared library and every
 # dynamically loaded backend module has to be aligned as well. These flags are
