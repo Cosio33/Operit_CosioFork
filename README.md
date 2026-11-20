@@ -1,247 +1,371 @@
 <h1 align="center">
-  <img src="app/src/main/assets/logo.svg" width="48" height="48" align="absmiddle" alt=""> Operit AI
+  <img src="app/src/main/assets/logo.svg" width="48" height="48" align="absmiddle" alt=""> Operit AI — Cosio Fork
 </h1>
 
 <div align="center">
-  <a href="README.zh-CN.md">中文</a> | <span>English</span>
+  <a href="README.md">English</a> | <a href="README.es.md">Español</a> | <a href="README.zh-CN.md">中文</a>
   <br>
-  <img src="https://img.shields.io/github/last-commit/AAswordman/Operit" alt="Last Commit">
+  <img src="https://img.shields.io/github/last-commit/Cosio33/Operit_CosioFork" alt="Last Commit">
   <img src="https://img.shields.io/badge/Platform-Android_8.0%2B-brightgreen.svg" alt="Platform">
-  <a href="https://github.com/AAswordman/Operit/releases/latest"><img src="https://img.shields.io/github/v/release/AAswordman/Operit" alt="Latest Release"></a>
-  <a href="https://github.com/AAswordman/Operit/stargazers"><img src="https://img.shields.io/github/stars/AAswordman/Operit" alt="GitHub Stars"></a>
-  <br>
-  <a href="https://operit.app/"><img src="https://img.shields.io/badge/📖-User_Guide-blue.svg" alt="User Guide"></a>
-  <a href="docs/doc-src/dev-core/CONTRIBUTING.md"><img src="https://img.shields.io/badge/contributions-welcome-brightgreen.svg" alt="Contributions Welcome"></a>
+  <img src="https://img.shields.io/github/v/release/Cosio33/Operit_CosioFork" alt="Latest Release">
+  <img src="https://img.shields.io/badge/license-LGPL--3.0-blue.svg" alt="License">
 </div>
 
 <div align="center">
-  <a href="https://trendshift.io/repositories/14027?utm_source=repository-badge&utm_medium=badge&utm_campaign=badge-repository-14027" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/repositories/14027" alt="AAswordman/Operit | Trendshift" width="250" height="55"/></a>
-  <a href="https://trendshift.io/repositories/14027?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-14027" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/14027/monthly?language=Kotlin" alt="AAswordman/Operit | Trendshift" width="250" height="55"/></a>
+  <img src="docs/assets/readme/operit-ai-banner-en.webp" width="100%" alt="Operit AI">
 </div>
 
-<div align="center">
-  <img src="docs/assets/readme/operit-ai-banner-en.webp" width="100%" alt="Operit AI - Android's most powerful, most feature-complete, and longest-running open-source AI Agent">
-</div>
+## About this repository
 
-## 🚀 Operit 2: Operit's Cross-Platform Successor
+This is **Cosio33's fork of [AAswordman/Operit](https://github.com/AAswordman/Operit)**, an open-source AI
+Agent platform for Android. The upstream project is the base of everything here — the app, the tool
+ecosystem, the marketplace, the memory system, the workspaces and the terminal — and it remains the
+upstream of record for the code base.
 
-This repository is Operit's Android edition. Operit 2 is a separate second-generation implementation centered on a shared Rust runtime, Flutter clients, and the `operit2` CLI/TUI. It currently includes implementation or build paths for Android, iOS, Windows, macOS, Linux, and Web, with OpenHarmony support under active development. To follow the cross-platform version, visit [Operit 2](https://github.com/AAswordman/Operit2).
+The fork exists for one reason: **making the on-device llama.cpp engine actually usable on real
+Android hardware.** That means building the native engine optimized instead of unoptimized, making
+large prompts survive the prefill, unlocking the ARM dot-product kernels, fixing the crashes that
+took the process down, and shipping releases that can be **installed on top of the previous one**
+without losing your configuration, your chats or your models.
 
-<a href="https://github.com/AAswordman/Operit2">
-  <img src="docs/assets/readme/operit2-matrix-cards-en.png" width="100%" alt="Operit 2 cross-platform open-source AI Agent">
-</a>
+> **This README is written for the fork, not copied from upstream.** It documents what this fork
+> changed, why, and how to build, install and verify it. For the full feature catalogue of Operit
+> AI, see the [upstream README](https://github.com/AAswordman/Operit#readme) and the
+> [user guide](https://operit.app/).
 
-## Introduction
+### What this fork changes, at a glance
 
-**Operit AI** is an open-source AI Agent platform for Android that supports cloud and local models, connecting them to Android system capabilities, terminals, browsers, files, and project workspaces to perform real tasks such as information retrieval, file processing, code development, and device automation through tool calling, workflows, and extensions such as ToolPkg, MCP, and Skills.
-
-## Highlights
-
-- **A task-oriented agent workspace**: Work with attachments, workspace context, tool execution progress, file changes, and multi-turn tasks
-- **Your choice of models and services**: Connect cloud models, custom compatible endpoints, and key pools, or use MNN models and GGUF models through llama.cpp
-- **Deep Android and web integration**: Use system capabilities after authorization, operate app interfaces, and read or interact with pages through the built-in browser
-- **Mobile development and terminal environment**: Manage projects, edit code, preview web apps, and use an Ubuntu 24.04 user space, SSH, and SFTP on your phone
-- **Long-term memory and characters**: Manage graph-based memory, chat history, character cards, and multi-character conversations, with an independent set of capabilities assigned to each character
-- **Composable extensions and automation**: Combine tools through the unified marketplace, workflows, and system integrations to create repeatable task flows
-
-## Feature Showcase
-
-<a href="docs/assets/readme/operit-agent-task-flow-2400x1000-v3-en.png">
-  <img src="docs/assets/readme/operit-agent-task-flow-2400x1000-v3-en.png" width="100%" alt="Agent task execution: from request input and tool execution to live preview, debugging, and delivery">
-</a>
-
-<a href="docs/assets/readme/operit-android-automation-2400x1000-v2-en.png">
-  <img src="docs/assets/readme/operit-android-automation-2400x1000-v2-en.png" width="100%" alt="Android automation demo">
-</a>
-
-<a href="docs/assets/readme/operit-memory-multicharacter-chat-2400x1000-v2-en.png">
-  <img src="docs/assets/readme/operit-memory-multicharacter-chat-2400x1000-v2-en.png" width="100%" alt="Memory and multi-character chat demo">
-</a>
-
-<a href="docs/assets/readme/operit-workspace-ubuntu-workflow-2400x1000-en.png">
-  <img src="docs/assets/readme/operit-workspace-ubuntu-workflow-2400x1000-en.png" width="100%" alt="Workspace and Ubuntu workflow demo">
-</a>
-
-<a href="docs/assets/readme/operit-plugin-ecosystem-agent-creation-2400x1000-v3-en.png">
-  <img src="docs/assets/readme/operit-plugin-ecosystem-agent-creation-2400x1000-v3-en.png" width="100%" alt="Plugin ecosystem and agent creation demo">
-</a>
-
-## Main Features
-
-<details>
-<summary><b>AI Chat and Models</b></summary>
-
-- Add images, audio, video, documents, and workspace files to conversation context
-- Use message branches, chat-history grouping and migration, automatic summaries, context limits, and parallel conversations
-- Connect OpenAI Chat/Responses, Anthropic, Gemini, and many compatible services, with additional providers available through ToolPkg
-- Manage multiple model configurations, parameters, key pools, and connection tests
-- Assign separate models to chat, memory, summarization, UI control, and other tasks
-- Run local inference with built-in MNN support or run GGUF models with llama.cpp
-- Connect to local model services such as Ollama and LM Studio
-
-</details>
-
-<details>
-<summary><b>Tools, Device Automation, and Browser Agent</b></summary>
-
-- Use built-in tools for files, networking, search, media, system operations, software management, and development
-- Choose among Allow automatically, Ask every time, and Deny for each tool; the default setting asks for permission
-- Automate Android interfaces through Accessibility, ADB-level debugging access provided by Shizuku, or Root
-- Use PhoneAgent/AutoGLM with visual screen understanding to perform actions; capabilities such as virtual displays require the appropriate permissions and device support
-- Use the built-in browser with tabs, history, bookmarks, downloads, permissions, multiple windows, and user scripts
-- Let the browser agent inspect page structure, click elements, enter text, scroll, send key presses, and capture screenshots
-- Use OCR, image understanding, the camera, FFmpeg, web access, and file transfer tools
-
-</details>
-
-<details>
-<summary><b>Project Workspaces and Terminal</b></summary>
-
-- Start from Web, Android, Flutter, Node.js, TypeScript, Python, Java, Go, and other project templates
-- Use a file tree, code editor, syntax highlighting, live previews, change tracking, backups, and export tools
-- Bind a workspace to a chat so the AI can read project rules, reference files, and modify code
-- Access app-internal directories, SAF, SFTP, and SSH file systems as workspaces
-- Run an Ubuntu 24.04 ARM64 user space through PRoot by default, with chroot available on supported setups
-- Use multiple terminal sessions, Python, Node.js, vim, SSH, tmux, custom keys, and custom package sources
-- Work with development tools including Logcat, SQLite, Git, APKTool, and HTML packaging
-
-</details>
-
-<details>
-<summary><b>Memory, Characters, and Chat Management</b></summary>
-
-- Manage multiple memory spaces, imported and chunked documents, editable node relationships, and hybrid search
-- Extract information from conversations and attachments, then use temporal, semantic, and relational retrieval for long-term memory
-- Import, export, back up, and share character cards by QR code, including Tavern JSON/PNG formats
-- Bind separate models, memory spaces, tool packages, Skills, and MCP services to each character
-- Run multi-character group chats with mentions, separate histories, and collaboration between characters
-- Import, export, lock, branch, migrate in bulk, back up, and restore chat records
-
-</details>
-
-<details>
-<summary><b>Extension Marketplace and Workflows</b></summary>
-
-- Search, install, and manage scripts, ToolPkg, Skills, and MCP services through one unified marketplace
-- Use the separate prompt and tag marketplace, along with project and Artifact management and publishing flows
-- Extend tools, interfaces, model providers, hooks, and runtime behavior through ToolPkg
-- Run local or remote MCP services, including launch methods such as uvx and npx
-- Build visual workflows from trigger, execution, condition, logic, and data extraction nodes
-- Trigger workflows manually, on schedules, through Tasker, intents, voice, or app startup
-- Inspect workflow logs and statistics, cancel runs, and manage workflows in batches
-
-</details>
-
-<details>
-<summary><b>Voice, Avatars, and Interface</b></summary>
-
-- Use local Chinese and English speech recognition or cloud STT interfaces such as OpenAI and Deepgram
-- Use Android system TTS, local ONNX VITS, custom HTTP services, and multiple cloud TTS providers
-- Enable continuous voice conversations, background wake-up, custom wake templates, automatic read-aloud, and music queues
-- Open Operit from a floating window, chat bubble, home-screen widget, or the Android default assistant entry point
-- Use virtual avatars in DragonBones, WebP, MP4, MMD, glTF/GLB, and FBX formats
-- Customize themes, fonts, chat bubbles, backgrounds, toolbars, Markdown rendering, and layouts
-- Choose Chinese, English, Korean, Spanish, Malay, Indonesian, Brazilian Portuguese, or Romanian, or follow the system language
-- Optionally enable the LAN Web Chat and HTTP API, which are disabled by default; configure a bearer token and assess the risks of LAN exposure before enabling them
-
-</details>
-
-## Quick Start
-
-| Item | Description |
-|------|-------------|
-| **System Requirements** | Android 8.0 (API 26) or newer; ARM64 (`arm64-v8a`) devices only |
-| **Resource Usage** | Memory and storage usage depend on the terminal environment, installed tool packages, and local models; reserve space according to each model's documentation |
-| **Download** | Get the latest APK from the [Releases page](https://github.com/AAswordman/Operit/releases) |
-| **User Guide** | Visit the [Operit website](https://operit.app/) for tutorials and examples |
-
-> **Security notice:** Only download installation packages from the official [Releases page](https://github.com/AAswordman/Operit/releases) or the [Operit website](https://operit.app/). Packages from unknown sources may be modified and may put your data or device at risk.
-
-Installation: Download the APK → Install and launch → Follow the setup flow to configure models and permissions → Start using Operit
-
-> **Data and network boundaries:** Chats, characters, memories, and model configurations are stored locally by the app. Cloud-model requests are sent from your device to the provider endpoint you configure; Operit does not host chat inference. Marketplace, MCP, Skill, speech, and drawing features may connect to third-party services. Web Chat/HTTP API are disabled by default; review network exposure and bearer-token settings before enabling them, and use Android intent/broadcast integrations only with trusted apps.
-
-## Project Evolution
-
-- **April to August 2025 · From AI chat to tool execution**: Added tool calling, MCP, voice, floating windows, web development, and character cards
-- **September to December 2025 · Deeper device and development integration**: Added the Ubuntu terminal, memory system, MNN, SSH workspaces, GUI automation, and the Skill ecosystem
-- **2026 to present · A mobile agent platform**: Expanded workflows, GGUF local inference, the browser agent, character group chat, Web Chat, ToolPkg, and the unified marketplace
-
-<details>
-<summary><b>View selected release summaries</b></summary>
-
-- **v1.12.0 · 2026-07-01**: Introduced a unified marketplace and Artifact workflows, enhanced project workspaces and the ToolPkg runtime, expanded language, voice, and media support, and improved crash recovery
-- **v1.11.0 · 2026-05-16**: Added Web Chat, the Artifact marketplace, ToolPkg AI providers and hooks, and improvements to memory, context, and browser automation
-- **v1.10.1 · 2026-04-17**: Upgraded the built-in browser and web automation, added FBX avatars, liquid-glass themes, and a local HTTP chat entry point
-- **v1.10.0 · 2026-03-18**: Added character group chat, AI self-configuration, Ollama/NVIDIA/OpenAI Responses modes, and more development tools
-- **v1.9.1 · 2026-02-20**: Focused fixes for terminals, strict tool calling, remote MCP, memory, and workflows
-- **v1.9.0 · 2026-02-17**: Added mobile web automation, Windows terminal control, the SQLite viewer, and Android workspace templates
-- **v1.8.1 · 2026-02-03**: Added llama.cpp GGUF local inference and expanded interface, backup, Skill, and workspace capabilities
-- **v1.8.0 · 2026-01-13**: Introduced workflows, voice wake triggers, parallel conversations, and automatic backups
-- **v1.7.1 · 2025-12-31**: Added Root virtual displays, the Skill protocol and marketplace, region-based screen recognition, and chat locking
-- **v1.7.0 · 2025-12-19**: Introduced AutoGLM GUI automation and virtual displays
-- **v1.6.4 · 2025-12-12**: Integrated AutoGLM and improved automation status indicators, tool-package environment variables, and debug logs
-- **v1.6.3 · 2025-12-07**: Added native tool calling, multi-model configurations, SSH file systems, and workspace project templates
-- **v1.6.2 · 2025-11-22**: Expanded chat branching and migration, context binding, and academic search
-- **v1.6.1 · 2025-11-16**: Refactored UI rendering and added visual understanding, SSH terminals, automatic summaries, and Deep Search
-- **v1.6.0 · 2025-10-21**: Added MNN local models, intelligent memory, Tasker integration, and desktop pets
-- **v1.5.2 · 2025-10-05**: Improved MCP, workspace `.gitignore` support, camera tools, HTML rendering, and regex filters
-- **v1.5.1 · 2025-09-25**: Added the MCP marketplace, key pools, workspace rollback on chat resend, and manual memory refresh
-- **v1.5.0 · 2025-09-20**: Integrated the Ubuntu 24.04 terminal and Deep Search mode
-- **v1.4.0 · 2025-09-01**: Added parallel tool execution, the character card system, and PNG character card import
-- **v1.3.0 · 2025-08-04**: Added web development, the theme selector, and Anthropic Claude support
-- **v1.2.x · 2025-07**: Added voice conversations, the knowledge base, and DragonBones animation
-- **v1.1.x · 2025-05 to 06**: Added MCP, OCR, floating windows, and Gemini support
-- **v1.0.0 · 2025-04-11**: Released basic AI chat, tool calling, and Shizuku/Root integration
-
-</details>
-
-See the [Releases page](https://github.com/AAswordman/Operit/releases) for complete release notes.
-
-## Open Source and Collaboration
-
-Contributions to Operit's scripts, extensions, documentation, and core features are welcome.
-
-- [Contribution Guide](docs/doc-src/dev-core/CONTRIBUTING.md)
-- [Build Guide](docs/doc-src/dev-core/BUILDING.md)
-- [Script Development Guide (Chinese)](docs/SCRIPT_DEV_GUIDE.md)
-- [ToolPkg Format Guide (Chinese)](docs/TOOLPKG_FORMAT_GUIDE.md)
-- Building requires the external `subpack.zip`, `jniLibs.zip`, and `libs.zip` archives and an initialized `terminal` submodule; the default local STT model is fetched and verified according to `app/config/stt-model-assets.properties`
-- Community: [QQ Group](https://qm.qq.com/q/Sa4fKEH7sO) | [Discord](https://discord.gg/YnV9MWurRF)
-
-### Contributors
-
-<a href="https://github.com/AAswordman/Operit/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=AAswordman/Operit" alt="Operit Contributors">
-</a>
-
-## Support Development
-
-If Operit is useful to you, you can voluntarily support ongoing development and basic project operations:
-
-- International support: [Patreon](https://www.patreon.com/c/aaswordsman)
-- Mainland China: [Afdian](https://afdian.com/a/aaswordsman)
-- Support is entirely voluntary and does not unlock features, quotas, updates, answers to questions, or other benefits
-- Choosing not to support does not affect normal use, updates, or access to the source code
-
-## License
-
-The main code in this repository is licensed under [GNU LGPL v3 (LGPL-3.0-only)](https://spdx.org/licenses/LGPL-3.0-only.html). Tools, examples, templates, and third-party dependencies may use other licenses; refer to [LICENSE](LICENSE), the license files in their respective directories, and package metadata for their terms.
-
-## Star History
-
-<div align="center">
-  <a href="https://www.star-history.com/?repos=AAswordman%2FOperit&amp;type=date&amp;legend=top-left">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=AAswordman/Operit&amp;type=date&amp;theme=dark&amp;legend=top-left&amp;sealed_token=x2g4HD_vqrg9vWOmPW-1NFSSSJK2LImmWpVQBambbxIE2pHqGHAzid1rnimOClPo9Xjg6oLM4771kAIr_JgdboIOqdJuFVSozXRgW2w2HOOSCBtWbL1w9w">
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=AAswordman%2FOperit&amp;type=date&amp;legend=top-left&amp;sealed_token=x2g4HD_vqrg9vWOmPW-1NFSSSJK2LImmWpVQBambbxIE2pHqGHAzid1rnimOClPo9Xjg6oLM4771kAIr_JgdboIOqdJuFVSozXRgW2w2HOOSCBtWbL1w9w">
-      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=AAswordman%2FOperit&amp;type=date&amp;legend=top-left&amp;sealed_token=x2g4HD_vqrg9vWOmPW-1NFSSSJK2LImmWpVQBambbxIE2pHqGHAzid1rnimOClPo9Xjg6oLM4771kAIr_JgdboIOqdJuFVSozXRgW2w2HOOSCBtWbL1w9w">
-    </picture>
-  </a>
-</div>
+| Area | Upstream | This fork |
+|------|----------|------------|
+| llama.cpp version | older pin | **v0.8.0** (`b11960`) — first release with **LiquidAI LFM3** support |
+| Native build type | `Debug` in debug variants → kernels at **-O0** | forced **`Release`** → kernels at **-O2** |
+| Large prompts | aborts the process past `n_batch` | prefill **chunked** into `min(n_batch, n_ubatch)` |
+| ARM dot-product | not reachable (single `arm64` lib) | **7 CPU variants** loaded at runtime (`GGML_BACKEND_DL`) |
+| Weight repack | `GGML_CPU_REPACK=ON` → **SIGSEGV** on arm64 | **disabled** (`GGML_CPU_REPACK OFF`) |
+| Tool calling | grammar could abort the process / emit **0 tokens** | try/catch, grammar first in the chain, **single accept** |
+| Release signing | ephemeral debug keystore → every update forced a reinstall | **stable keystore** → updates install **in place** |
+| Performance monitor | Chinese-only strings | **Spanish** translation (22 strings) |
+| JVM test workflow | broken since the upstream import | **1333 tests, 0 failures** |
 
 ---
 
+## Installation
+
+### Requirements
+
+- **Android 8.0 (API 26) or newer**, **ARM64 (`arm64-v8a`)** only
+- ~450 MB for the APK, plus the size of the models you download
+- For **local models**: the "All files access" permission (`MANAGE_EXTERNAL_STORAGE`)
+
+### Option A — Obtanium (recommended, supports in-place updates)
+
+1. Open **Obtanium** → *Add app* → source **GitHub Releases**
+2. Repository: `Cosio33/Operit_CosioFork`, tag: `RealeseV6` (or the regex `Realese.*` to follow every release)
+3. Install. Future releases appear as **updates** and install **on top** of the current version,
+   keeping your configuration, chats and models.
+
+### Option B — Direct APK
+
+Download [`Operit-llamav0.8.0-v6.apk`](https://github.com/Cosio33/Operit_CosioFork/releases/download/RealeseV6/Operit-llamav0.8.0-v6.apk)
+from the [Releases page](https://github.com/Cosio33/Operit_CosioFork/releases) and install it.
+
+> **Security notice:** only install packages from the official
+> [Releases page](https://github.com/Cosio33/Operit_CosioFork/releases) or the
+> [Operit website](https://operit.app/). Packages from unknown sources may be modified and may put
+> your data or device at risk.
+
+> **Updating in place:** every release published from `RealeseV5` onwards is signed with the same
+> key, so `adb install -r` / Obtanium upgrades succeed without uninstalling. Verified on a
+> CUBOT KINGKONG 9 EEA (Helio G99, Android 14): `firstInstallTime` unchanged, all 12
+> `files/datastore/*.preferences_pb` byte-identical (sha256), `objectbox/data.mdb` unchanged, and
+> `MANAGE_EXTERNAL_STORAGE` still granted. The only version that had to be uninstalled first was
+> `RealeseV5` itself, because it introduced the stable key.
+
+---
+
+## Local inference: llama.cpp on Android
+
+This fork targets the **LiquidAI LFM3** family (LFM3-1.7B, LFM3-Omni-2B, …) running fully
+on-device through a JNI binding of llama.cpp. Five non-obvious problems had to be solved to make
+that work on a mid-range ARM64 phone.
+
+### 1. The native engine was being compiled without optimizations
+
+The Android Gradle plugin sets `CMAKE_BUILD_TYPE=Debug` for the `debug` and `clone` variants, and
+CMake's `Debug` flags are `-g` only — so **llama.cpp and ggml were compiled at `-O0`** in every
+APK that shipped. The symptom is invisible: the app runs, it is just several times slower than it
+should be. Measured with `llvm-objdump -d`, the hot quantised matmul
+`ggml_vec_dot_q4_0_q8_0` occupied **2592 bytes at -O0** against **696 bytes at -O2**.
+
+```cmake
+# llm/llama/CMakeLists.txt
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
+endif()
+```
+
+> The absence of `.debug_info` in the APK is **not** evidence of an optimized build: AGP strips
+> the native libraries when packaging. Compare function sizes instead.
+
+### 2. Prompts larger than `n_batch` killed the process
+
+The binding pushed the whole prompt in a single `llama_batch_get_one()`. With `n_batch = 512` and a
+conversation history that keeps growing, the prompt crossed the limit and
+`GGML_ASSERT(n_tokens_all <= cparams.n_batch)` aborted the **process** — `GGML_ASSERT` is
+unconditional, it is not disabled in release builds. The app then restarted, reloaded the same
+history and aborted again: an instant crash loop.
+
+The fix is to feed the prefill in chunks of `min(n_batch, n_ubatch)`, for both the decoder and the
+encoder (the encoder has its own `GGML_ASSERT(n_ubatch >= n_tokens)`):
+
+```cpp
+// llm/llama/src/main/cpp/llama_jni_stub.cpp
+uint32_t limit = llama_n_batch(ctx);
+const uint32_t nUbatch = llama_n_ubatch(ctx);
+```
+
+Upstream semantics are preserved: with `pos == nullptr` the positions are derived from the KV cache
+state, and with `logits == nullptr` only the last token of each batch is an output — so chunking
+is equivalent to a single batch for causal models and the sampling result does not change.
+
+The log line that proves it is working:
+
+```
+Prefill decode start: prompt_tokens=587 n_ctx=2048 n_batch=512 n_ubatch=512 chunk_limit=512 chunks=2
+```
+
+### 3. ARM dot-product kernels were unreachable — and enabling them naively is fatal
+
+ggml gates the int8 dot-product kernels behind the **compile-time** macro
+`__ARM_FEATURE_DOTPROD` (`ggml/src/ggml-cpu/arch/arm/quants.c`), with no runtime fallback. A single
+library built with `+dotprod` would execute the `sdot` instruction on every device and die with
+**SIGILL** on CPUs that do not implement it (ARMv8.0 / A53).
+
+The safe path is what upstream does: ship one shared library per feature set and pick the best
+supported one at runtime, using the score function in
+`ggml/src/ggml-cpu/arch/arm/cpu-feats.cpp`. That requires the backend to be a dynamically loaded
+module.
+
+```cmake
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL ON CACHE BOOL "" FORCE)
+set(GGML_CPU_ALL_VARIANTS ON CACHE BOOL "" FORCE)
+```
+
+llama.cpp v0.8.0 already ships the Android variants, so no upstream patch is needed:
+`android_armv8.0_1`, `android_armv8.2_1` *(DOTPROD)*, `android_armv8.2_2`, `android_armv8.6_1`,
+`android_armv9.0_1`, `android_armv9.2_1`, `android_armv9.2_2`.
+
+**Android-specific trap:** `ggml_backend_load_all()` searches `get_executable_path()`, which on
+Android is `/proc/self/exe` → `/system/bin/app_process64`, not the directory that holds the `.so`
+files. The variants are therefore loaded explicitly with the real path, obtained with `dladdr()`:
+
+```cpp
+ggml_backend_load_all_from_path(dir.c_str());
+```
+
+Because the engine is no longer a single object file, **every** shared library and every
+dynamically loaded backend module also needs 16 KB page alignment (Android 15+ requirement):
+
+```cmake
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+```
+
+### 4. Weight repacking crashed on arm64 (SIGSEGV)
+
+`GGML_CPU_REPACK` is `ON` by default in ggml and re-orders the quantised weights at load time into
+the "8x4" layout used by the llamafile-style kernels (`ggml_gemv_q4_K_8x4_q8_K` and friends). That
+path is **not supported together with the multi-variant CPU backend**
+([ggml-org/llama.cpp#30583](https://github.com/ggml-org/llama.cpp/issues/30583)). On this device it
+crashed with a **SIGSEGV** inside the dot-product variant:
+
+```
+#00 ggml_gemv_q4_K_8x4_q8_K
+#01 ggml::cpu::repack::tensor_traits<block_q4_K, 4, 8, (ggml_type)15>::forward_mul_mat_one_chunk
+...
+#07 libomp.so (__kmp_invoke_microtask)
+```
+
+i.e. the repack kernel reads past the end of the re-ordered weight buffer. The same happens with
+the Q6_K kernel (`ggml_gemm_q6_K_8x4_q8_K`).
+
+Turning it off costs nothing: the regular quantised matmul path is gated by `__ARM_FEATURE_DOTPROD`
+on its own, so the `armv8.2` variant still uses `sdot`.
+
+```cmake
+set(GGML_CPU_REPACK OFF CACHE BOOL "" FORCE)
+```
+
+### 5. Tool calling could abort the process, or return 0 tokens
+
+Two separate defects, both in the sampler chain:
+
+**Abort.** `llama_grammar_accept_token()` throws `std::runtime_error` when the grammar has no valid
+continuation (`src/llama-grammar.cpp`). The binding called it without a `try`/`catch`, so the
+exception crossed the JNI boundary → `std::terminate` → the process died. It also prefilled the
+grammar differently from upstream: upstream accepts into the **grammar sampler only**, and only
+when the grammar is not lazy, while the fork accepted into the whole chain. With a lazy grammar
+(the tool-call grammar always carries a trigger), the trigger fired before the model produced
+anything and the model's own `<tool_call>` token was rejected → empty grammar stack → throw.
+
+**0 tokens.** `llama_sampler_sample()` already accepts the token into the chain
+(`src/llama-sampler.cpp`), and the fork accepted it a **second** time. The lazy grammar received
+the same `<tool_call>` twice: the first accept advanced the grammar, the second found no
+continuation → `grammar.stacks` empty → throw. The tool call then returned
+`输出token数: 0`. As a side effect, the penalties sampler was receiving every token **twice** in
+every normal generation, duplicating repetition/frequency/presence penalties.
+
+The fix mirrors upstream `common/sampling.cpp`:
+
+- one single `llama_sampler_accept()` per token;
+- the **grammar sampler is first in the chain**, so a valid token cannot have been discarded by
+  top-k before the grammar sees it;
+- the grammar sampler is kept **outside** the chain, with separate apply/accept calls;
+- a `try`/`catch` around sample+accept, degrading gracefully to the text already emitted.
+
+> **Remaining limitation (not a binding bug):** with LFM3-1.7B the *model* is not very reliable at
+> producing a valid tool-call JSON. The grammar no longer rejects tokens and the crash is gone, but
+> the quality of the structured output depends on the model's capability.
+
+---
+
+## Performance notes (measured)
+
+Measurements on a **CUBOT KINGKONG 9 EEA** (Helio G99, Android 14), `n_ctx=4096`, `mmap=false`,
+5 generations, `max_new=256`, same chat, history growing ~270 tokens per turn:
+
+| Threads | Prefill | Decode |
+|---------|---------|--------|
+| 4 | **9.01 tok/s** (0.1109 s/token) | **5.60 tok/s** (0.1785 s/token) |
+| 8 | 10.05 tok/s | 4.09 tok/s |
+
+Fitted cost model: `total ≈ 40.5 + 0.1146 × prompt_tokens` (4 threads) and
+`≈ 42.5 + 0.1170 × prompt_tokens` (8 threads). **Four threads wins at every prompt size**, so the
+fork ships `threads=4`.
+
+The key conclusion: **the prefill is 65–77 % of the total time** and it is compute-bound, while the
+decode is memory-bandwidth-bound. That is exactly why unlocking the dot-product kernels is the
+right lever — dot-product barely helps the decode, but it accelerates the dominant prefill.
+
+> `n_ctx` is currently hardcoded to **2048** by the session factory
+> (`AIServiceFactory.buildAndroidLlamaSessionConfig()`); the model configuration screen has no field
+> for it. When the prompt approaches that limit, the binding truncates from the front — which in a
+> Jinja template means the system prompt and the tool schemas are the first thing dropped.
+
+---
+
+## Building from source
+
+The build requires the external `subpack.zip`, `jniLibs.zip` and `libs.zip` archives and an
+initialised `terminal` submodule; the default local STT model is fetched and verified according to
+`app/config/stt-model-assets.properties`. See the upstream
+[Build Guide](https://github.com/AAswordman/Operit/blob/main/docs/doc-src/dev-core/BUILDING.md).
+
+The llama.cpp sources are **not vendored**: they are fetched at build time by
+`cmake/operit_git_source.cmake` and pinned by SHA in `llm/llama/CMakeLists.txt`:
+
+```cmake
+operit_prepare_git_source(
+    OPERIT_LLAMA_CPP_SOURCE_DIR
+    OPERIT_LLAMA_CPP_BINARY_DIR
+    llama_cpp
+    "https://github.com/ggml-org/llama.cpp.git"
+    # v0.8.0 (b11960): first upstream release with LiquidAI LFM3 support
+    "8642541b255bfb5dc39cd351a178be09013a55d6"
+)
+```
+
+Override the pin with `-DOPERIT_LLAMA_CPP_GIT_REF=<sha|tag>`.
+
+### Syntax-checking the native code without a full build
+
+```bash
+aarch64-linux-android26-clang++.cmd -fsyntax-only -std=c++17 \
+  -DOPERIT_HAS_LLAMA_CPP=1 \
+  -I <llama.cpp src> -I <llama.cpp src>/include -I <llama.cpp src>/common \
+  -I <llama.cpp src>/ggml/include -I <llama.cpp src>/vendor \
+  llama_jni_stub.cpp
+```
+
+---
+
+## CI and releases
+
+Two workflows run on GitHub Actions:
+
+- **`Android Build`** — produces the APK artifact.
+- **`Android JVM tests`** — the JVM unit-test suite (**1333 tests, 0 failures**). This workflow was
+  broken since the upstream import; the fix ported the upstream test changes and the upstream
+  production change to `ReleasedProviderModelKeyDecoder` (legacy pre-provider keys must not migrate
+  to a non-existent provider).
+
+### Release signing
+
+Every release since `RealeseV5` is signed with a **stable key** stored as repository secrets
+(`OPERIT_KEYSTORE_BASE64`, `OPERIT_KEYSTORE_PASSWORD`, `OPERIT_KEY_ALIAS`, `OPERIT_KEY_PASSWORD`).
+The workflow decodes the keystore, injects the `RELEASE_*` properties into `local.properties` and
+reports the signer digest of the produced APK. `debug` and `nightly` variants use the stable key
+when it is available and fall back to the AGP debug key otherwise.
+
+> Keep a backup of the keystore. It is the only copy of the signing key: losing it means the next
+> release can no longer be installed on top of the current one.
+
+### Publishing rules
+
+A release is only published when **all** of these hold:
+
+1. the JVM test workflow finished in `success`;
+2. the build workflow finished in `success`;
+3. the APK carries the expected signing digest;
+4. the APK declares the expected `versionCode`.
+
+> **`versionCode` must increase on every release.** Obtanium will not offer an update for an APK
+> with the same `versionCode` as the installed one, even with an identical signature.
+
+Upload the asset to **`uploads.github.com`** (not `api.github.com`, which answers `404` for asset
+uploads):
+
+```
+POST https://uploads.github.com/repos/Cosio33/Operit_CosioFork/releases/{id}/assets?name=<asset>
+```
+
+---
+
+## Known limitations
+
+- **Tool calling with small models is unreliable.** LFM3-1.7B often produces a valid-looking but
+  schema-broken tool call. The binding no longer crashes and no longer drops the tokens; the
+  remaining gap is model capability.
+- **`n_ctx` is fixed at 2048** and is not exposed in the UI. Long chats are truncated from the
+  front, which drops the system prompt and the tool schemas first.
+- **The Ubuntu/proot rootfs is regenerated** after a full reinstall (an in-place update preserves
+  it).
+- **`MANAGE_EXTERNAL_STORAGE` is required** for local models and is lost on uninstall, not on
+  update.
+- **The `dotprod` variants require ARMv8.2+**; on ARMv8.0 devices the build still works and simply
+  falls back to the non-dot-product kernels.
+
+---
+
+## Upstream, credits and license
+
+- **Upstream project:** [AAswordman/Operit](https://github.com/AAswordman/Operit) — the source of
+  truth for the application code, the tool ecosystem and the documentation.
+- **Cross-platform successor:** [Operit 2](https://github.com/AAswordman/Operit2).
+- **Inference engine:** [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) v0.8.0, fetched
+  at build time and not vendored in this repository.
+- **LiquidAI LFM3** support in llama.cpp comes from upstream
+  [ggml-org/llama.cpp#31252](https://github.com/ggml-org/llama.cpp/pull/31252).
+
+Contributions to scripts, extensions, documentation and core features are welcome — see the
+[Contribution Guide](https://github.com/AAswordman/Operit/blob/main/docs/doc-src/dev-core/CONTRIBUTING.md).
+
+The main code in this repository is licensed under
+**[GNU LGPL v3 (LGPL-3.0-only)](https://spdx.org/licenses/LGPL-3.0-only.html)**. Tools, examples,
+templates and third-party dependencies may use other licenses; refer to [LICENSE](LICENSE), the
+license files in their respective directories, and package metadata for their terms.
+
 <div align="center">
-  <sub>Made with ❤️ by the Operit Team</sub>
+  <sub>Operit AI by the Operit Team · Fork maintained by <a href="https://github.com/Cosio33">Cosio33</a></sub>
 </div>
